@@ -1,4 +1,3 @@
-import os
 import logging
 import numpy as np
 import astroalign as aa
@@ -22,24 +21,22 @@ logging.basicConfig(
 
 # Images used as reference sample
 REFERENCE_IMAGE = "reference.fit"
-# Images used for analysis (this one should contains SNe)
+# Images used for analysis (this one should contain SNe)
 ANALYSIS_IMAGE = "science.fit"
-# *USE [detect("reference_image_string", "analysis_image_String")] directly if you are building a pipeline
+# Use detect("reference_image_string", "analysis_image_string") directly if building a pipeline
 
-
-# Output image with found different
+# Output image with found difference
 DIF_IMG = "found_difference.fit"
-# Align images based on WSC data from image's header (Seestar usually has this)
-# If false try to align images based on geometery (AstroAlign)
-USE_WSC = True
-# Uses standard perceptual weights from the sRGB if false, otherwise Seestar's specific
+# Align images based on WCS data from image headers (Seestar usually has this).
+# If False, try to align images based on geometry with AstroAlign.
+USE_WCS = True
+# Use Seestar-specific luminance weights when True; otherwise use standard perceptual weights.
 USE_SEESTAR_LUMINANCE = True
 # Detection threshold
 NSIGMA = 1
 
 # --------------------------
 # CONFIG <END>
-
 
 
 def open_fit(fl: str) -> Optional[Tuple[fits.Header, np.ndarray]]:
@@ -237,7 +234,7 @@ def find_difference_arrays(reference_array: np.ndarray, aligned_array: np.ndarra
     """
     if reference_array.shape != aligned_array.shape:
         raise ValueError("Images must have the same dimensions for subtraction.")
-    
+
     logging.info("🔎 Starting difference imaging...")
 
     # Image subtraction in float32 for precision
@@ -301,7 +298,7 @@ def to_luminance(rgb: np.ndarray) -> Optional[np.ndarray]:
       a sensor-specific version (e.g., `to_luminance_s50_lp` for Seestar S50).
     """
     if rgb.ndim != 3 or 3 not in rgb.shape:
-        logging.Error("Expected an RGB array with 3 channels.")
+        logging.error("Expected an RGB array with 3 channels.")
         return None
 
     # Reorder to (H, W, 3) if needed
@@ -342,7 +339,7 @@ def to_luminance_s50_lp(rgb: np.ndarray) -> Optional[np.ndarray]:
       and OIII emission lines, making R more valuable for deep-sky targets.
     """
     if rgb.ndim != 3 or 3 not in rgb.shape:
-        logging.Error("Expected RGB array with 3 channels.")
+        logging.error("Expected RGB array with 3 channels.")
         return None
 
     # Handle channel-first vs channel-last formats
@@ -405,7 +402,7 @@ def detect(ref_img, ana_img) -> bool:
             return False
 
         # Align the data
-        if USE_WSC:
+        if USE_WCS:
             lum_c_ref = "luminance_channel_ref.fit"
             lum_c_sci = "luminance_channel_sci.fit"
             fits.writeto(lum_c_ref, luminance_channel_ref, ref_header, overwrite=True)
@@ -431,7 +428,6 @@ def detect(ref_img, ana_img) -> bool:
     return False
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     detect(REFERENCE_IMAGE, ANALYSIS_IMAGE)
