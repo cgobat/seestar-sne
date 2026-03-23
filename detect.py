@@ -66,7 +66,7 @@ def open_fit(fl: str) -> Optional[Tuple[fits.Header, np.ndarray]]:
 
 
 
-def check_fit(pth: str) -> bool:
+def check_fit(pth: str, require_wcs: bool = True) -> bool:
     """
     Checks whether a FITS file contains valid 3D image data with celestial WCS coordinates.
 
@@ -84,12 +84,9 @@ def check_fit(pth: str) -> bool:
         False otherwise.
     """
     try:
-        hdul = open_fit(pth)
-        if not hdul:
+        header, data = open_fit(pth)
+        if not data:
             return False
-
-        header: Header = hdul[0]
-        data: np.ndarray = hdul[1]
 
         # Ensure data is 3D (e.g., RGB or stacked exposures)
         if data.ndim != 3:
@@ -103,7 +100,6 @@ def check_fit(pth: str) -> bool:
     except Exception as e:
         logging.error(e)
         return False
-
 
 
 def align_with_astro_align(reference_array: np.ndarray, source_array: np.ndarray) -> Optional[np.ndarray]:
@@ -355,7 +351,7 @@ def to_luminance_s50_lp(rgb: np.ndarray) -> Optional[np.ndarray]:
 
 
 
-def detect(ref_img, ana_img) -> bool:
+def detect(ref_img: str, ana_img: str) -> bool:
     """
     Created as function for purpose of pipeline building
 
@@ -375,55 +371,55 @@ def detect(ref_img, ana_img) -> bool:
     """
 
     # Check if .fit files are usable in this pipeline
-    if check_fit(ref_img) and check_fit(ana_img):
-        aligned_data = None
-        luminance_channel_ref = None
-        luminance_channel_sci = None
+    if not (check_fit(ref_img, require_wcs=USE_WCS) and check_fit(ana_img, require_wcs=USE_WCS)):
+        return False
 
-        # Get data and header files from the .fit files
-        # *data already checked in "check_fit" for None
-        ref = open_fit(ref_img)
-        ref_header = ref[0]
-        ref_data = ref[1]
+    aligned_data = None
+    luminance_channel_ref = None
+    luminance_channel_sci = None
 
-        sci = open_fit(ana_img)
-        sci_header = sci[0]
-        sci_data = sci[1]
+    # Get data and header files from the .fit files
+    # *already checked for None by `check_fit`
+    ref = open_fit(ref_img)
+    ref_header = ref[0]
+    ref_data = ref[1]
 
-        # Convert RGB cube to luminance
-        if USE_SEESTAR_LUMINANCE:
-            luminance_channel_ref = to_luminance_s50_lp(ref_data)
-            luminance_channel_sci = to_luminance_s50_lp(sci_data)
-        else:
-            luminance_channel_ref = to_luminance(ref_data)
-            luminance_channel_sci = to_luminance(sci_data)
+    sci = open_fit(ana_img)
+    sci_header = sci[0]
+    sci_data = sci[1]
 
-        if luminance_channel_ref is None or luminance_channel_sci is None:
+    # Convert RGB cube to luminance
+    if USE_SEESTAR_LUMINANCE:
+        luminance_channel_ref = to_luminance_s50_lp(ref_data)
+        luminance_channel_sci = to_luminance_s50_lp(sci_data)
+    else:
+        luminance_channel_ref = to_luminance(ref_data)
+        luminance_channel_sci = to_luminance(sci_data)
+
+    if luminance_channel_ref is None or luminance_channel_sci is None:
+        return False
+
+    # Align the data
+    if USE_WCS:
+        lum_c_ref = "luminance_channel_ref.fit"
+        lum_c_sci = "luminance_channel_sci.fit"
+        fits.writeto(lum_c_ref, luminance_channel_ref, ref_header, overwrite=True)
+        fits.writeto(lum_c_sci, luminance_channel_sci, sci_header, overwrite=True)
+
+        aligned_data = align_with_wcs(lum_c_ref, lum_c_sci)
+        os.remove(lum_c_ref)
+        os.remove(lum_c_sci)
+
+    else:
+        aligned_data = align_with_astro_align(luminance_channel_ref, luminance_channel_sci)
+
+    if aligned_data is not None:
+        # Find differences in bright pixels
+        datections = find_difference_arrays(luminance_channel_ref, aligned_data)
+        if detect is None:
             return False
-
-        # Align the data
-        if USE_WCS:
-            lum_c_ref = "luminance_channel_ref.fit"
-            lum_c_sci = "luminance_channel_sci.fit"
-            fits.writeto(lum_c_ref, luminance_channel_ref, ref_header, overwrite=True)
-            fits.writeto(lum_c_sci, luminance_channel_sci, sci_header, overwrite=True)
-
-            aligned_data = align_with_wcs(lum_c_ref, lum_c_sci)
-            os.remove(lum_c_ref)
-            os.remove(lum_c_sci)
-
         else:
-            aligned_data = align_with_astro_align(luminance_channel_ref, luminance_channel_sci)
-
-        if not aligned_data is None:
-            # Find differences in bright pixels
-            datections = find_difference_arrays(luminance_channel_ref, aligned_data)
-            if detect is None:
-                return False
-            else:
-                return True
-        else: 
-            return False
+            return True
 
     return False
 
